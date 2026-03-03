@@ -90,9 +90,13 @@ body {
 
 .country {
   fill: var(--surface);
-  stroke: var(--border);
+  stroke: rgba(255, 255, 255, 0.1);
+  /* PREMIUM: Subtle borders */
   stroke-width: 0.3;
-  transition: fill 0.15s ease;
+  stroke-linejoin: round;
+  /* PREMIUM: Smooth corners */
+  transition: fill 0.2s ease;
+  /* PREMIUM: Smooth transitions */
   vector-effect: non-scaling-stroke;
   will-change: transform;
   pointer-events: visiblePainted;
@@ -100,6 +104,13 @@ body {
 
 .country:hover {
   fill: #252545;
+}
+
+/* --- Low Power Mode --- */
+
+.low-power .country {
+  stroke-width: 0.5px;
+  filter: none !important;
 }
 
 /* --- Pin --- */

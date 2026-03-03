@@ -58,6 +58,11 @@ async function main() {
     console.log('⏳  Fetching GeoJSON…');
     const resp = await fetch(GEOJSON_URL);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    // FIX: Extract JSON data from response
+    const geo = await resp.json();
+    console.log(`   ${geo.features.length} features loaded.`);
+
     console.log('⏳  Simplifying geometry (Topology-preserving)…');
 
     // 1. Convert to TopoJSON (this merges shared borders)
@@ -126,7 +131,7 @@ async function main() {
 
     const sizeKB = (Buffer.byteLength(svg) / 1024).toFixed(0);
     console.log(`✅  ${count} countries → public/map.svg (${sizeKB} KB)`);
-    console.log(`📊  Total simplified points: ${totalPoints}`);
+    console.log(`📊  Simplified points: ${totalPoints}`);
 }
 
 main().catch((err) => {
