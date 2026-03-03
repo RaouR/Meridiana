@@ -5,7 +5,7 @@
 
 import './style.css';
 import { initMap, getPin, clearPin } from './map-renderer.js';
-import { haversineKm, feedback, distanceTier } from './geo.js';
+import { haversineKm, feedback, distanceTier, getCountryAt } from './geo.js';
 
 const coordsDisplay = document.getElementById('coordinates-display');
 const submitBtn = document.getElementById('submit-guess');
@@ -23,7 +23,9 @@ initMap('map-container', onPinPlaced).catch((err) => {
 /* ------------------------------------------------------------------ */
 
 function onPinPlaced({ lat, lng }) {
-  coordsDisplay.textContent = `📍 ${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
+  const countryCode = getCountryAt(lat, lng);
+  const locationText = countryCode ? ` [${countryCode}]` : '';
+  coordsDisplay.textContent = `📍 ${lat.toFixed(4)}°, ${lng.toFixed(4)}°${locationText}`;
   submitBtn.disabled = false;
 }
 

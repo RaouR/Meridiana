@@ -3,6 +3,8 @@
  * All coordinate math uses a square Mercator map of MAP_SIZE × MAP_SIZE pixels.
  */
 
+import { countryBoundaries } from './map-data.js';
+
 export const MAP_SIZE = 1000;
 export const MAX_LAT = 85.0511;
 
@@ -32,8 +34,42 @@ export function latLngToPixel(lat, lng) {
   const y =
     MAP_SIZE / 2 -
     (MAP_SIZE / (2 * Math.PI)) *
-      Math.log(Math.tan(Math.PI / 4 + latRad / 2));
+    Math.log(Math.tan(Math.PI / 4 + latRad / 2));
   return { x, y };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Hit Detection (Ray Casting)                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Detect which country (ISO code) is at a given Lat/Lng.
+ */
+export function getCountryAt(lat, lng) {
+  for (const [iso, polygons] of Object.entries(countryBoundaries)) {
+    for (const polygon of polygons) {
+      if (isPointInPolygon(lng, lat, polygon)) {
+        return iso;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Ray casting algorithm for point-in-polygon test.
+ */
+function isPointInPolygon(x, y, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+
+    const intersect = ((yi > y) !== (yj > y)) &&
+      (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
 }
 
 /* ------------------------------------------------------------------ */
@@ -48,8 +84,8 @@ export function haversineKm(lat1, lng1, lat2, lng2) {
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLng / 2) ** 2;
+    Math.cos(toRad(lat2)) *
+    Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 

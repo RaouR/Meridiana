@@ -1,9 +1,8 @@
 /**
  * generate-map.mjs — Fetches world GeoJSON, simplifies it via TopoJSON,
- * and converts to a Mercator SVG.
+ * merges geometries into a single SVG path, and exports hit-detection data.
  *
  * Usage:  node scripts/generate-map.mjs
- * Output: public/map.svg
  */
 
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
@@ -59,78 +58,89 @@ async function main() {
     const resp = await fetch(GEOJSON_URL);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-    // FIX: Extract JSON data from response
     const geo = await resp.json();
     console.log(`   ${geo.features.length} features loaded.`);
 
     console.log('⏳  Simplifying geometry (Topology-preserving)…');
 
-    // 1. Convert to TopoJSON (this merges shared borders)
+    // 1. Convert to TopoJSON
     const topology = topojsonServer.topology({ countries: geo });
 
     // 2. Simplify using Visvalingam’s algorithm
     const simplifiedTopology = topojsonSimplify.presimplify(topology);
 
-    // Target ~90-95% reduction for map performance.
-    // 0.05 quantile keeps the top 5% most significant points.
-    const threshold = topojsonSimplify.quantile(simplifiedTopology, 0.05);
+    // Using 0.07 as requested (keeps the top 7% most significant points)
+    const threshold = topojsonSimplify.quantile(simplifiedTopology, 0.07);
     const simpler = topojsonSimplify.simplify(simplifiedTopology, threshold);
 
     // 3. Convert back to GeoJSON features
     const simplifiedGeo = topojsonClient.feature(simpler, simpler.objects.countries);
     console.log(`   Geometry simplified.`);
 
-    let paths = '';
+    let allPathData = '';
+    let countryBoundaries = {};
     let count = 0;
     let totalPoints = 0;
 
     for (const feature of simplifiedGeo.features) {
         const props = feature.properties || {};
+        // Use properties found in this specific dataset
         const iso =
+            props['ISO3166-1-Alpha-2'] ||
+            props['ISO3166-1-Alpha-3'] ||
             props.ISO_A2 ||
             props.ISO_A3 ||
             props.iso_a2 ||
             props.iso_a3 ||
-            props.ISO ||
-            props.ADM0_A3 ||
-            'XX';
+            props.name ||
+            'Unknown';
+
         const geom = feature.geometry;
         if (!geom) continue;
 
-        let d = '';
+        // Ensure we handle collisions or multiple polygons for the same ISO
+        if (!countryBoundaries[iso]) countryBoundaries[iso] = [];
 
         if (geom.type === 'Polygon') {
-            d = geom.coordinates.map(ringToPathData).join('');
-            geom.coordinates.forEach(ring => totalPoints += ring.length);
+            allPathData += geom.coordinates.map(ringToPathData).join('');
+            geom.coordinates.forEach(ring => {
+                totalPoints += ring.length;
+                countryBoundaries[iso].push(ring);
+            });
         } else if (geom.type === 'MultiPolygon') {
-            d = geom.coordinates
-                .map((poly) => poly.map(ringToPathData).join(''))
-                .join('');
-            geom.coordinates.forEach(poly => poly.forEach(ring => totalPoints += ring.length));
+            geom.coordinates.forEach((poly) => {
+                allPathData += poly.map(ringToPathData).join('');
+                poly.forEach(ring => {
+                    totalPoints += ring.length;
+                    countryBoundaries[iso].push(ring);
+                });
+            });
         }
-
-        if (d) {
-            paths += `  <path class="country" data-id="${iso}" d="${d}"/>\n`;
-            count++;
-        }
+        count++;
     }
 
+    // 1. Write public/map.svg (Merged Path)
     const svg = [
         `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${MAP_SIZE} ${MAP_SIZE}" preserveAspectRatio="xMidYMid meet">`,
         `<rect width="${MAP_SIZE}" height="${MAP_SIZE}" fill="#0f0f1a"/>`,
         `<g id="countries">`,
-        paths,
+        `  <path class="world-map" d="${allPathData}"/>`,
         `</g>`,
         `</svg>`,
     ].join('\n');
 
     const outDir = join(ROOT, 'public');
     if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
-    const outPath = join(outDir, 'map.svg');
-    writeFileSync(outPath, svg);
+    writeFileSync(join(outDir, 'map.svg'), svg);
 
-    const sizeKB = (Buffer.byteLength(svg) / 1024).toFixed(0);
-    console.log(`✅  ${count} countries → public/map.svg (${sizeKB} KB)`);
+    // 2. Write src/map-data.js (Hit Detection Data)
+    const dataContent = `/**\n * Auto-generated map data for hit detection.\n */\n\nexport const countryBoundaries = ${JSON.stringify(countryBoundaries)};\n`;
+    writeFileSync(join(ROOT, 'src', 'map-data.js'), dataContent);
+
+    const sizeSVG = (Buffer.byteLength(svg) / 1024).toFixed(0);
+    const sizeJS = (Buffer.byteLength(dataContent) / 1024).toFixed(0);
+    console.log(`✅  ${count} countries merged → public/map.svg (${sizeSVG} KB)`);
+    console.log(`✅  Hit data generated → src/map-data.js (${sizeJS} KB)`);
     console.log(`📊  Simplified points: ${totalPoints}`);
 }
 
