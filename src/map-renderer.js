@@ -1,14 +1,12 @@
-/**
- * map-renderer.js — Loads the Mercator SVG, sets up panzoom,
- * handles click-to-place pin with inverse-scale logic.
- */
-
 import panzoom from 'panzoom';
 import { pixelToLatLng, MAP_SIZE } from './geo.js';
+import { countryBoundaries } from './map-data.js';
 
 let panzoomInstance = null;
-let svgEl = null;
-let mapGroup = null;
+let containerWrapper = null;
+let mapImg = null;
+let svgOverlay = null;
+let highlightGroup = null;
 let pinGroup = null;
 let currentPin = null;          // { lat, lng, svgX, svgY }
 let onPinPlacedCallback = null; // called when pin is placed / moved
@@ -17,81 +15,88 @@ let onPinPlacedCallback = null; // called when pin is placed / moved
 /*  Initialise                                                        */
 /* ------------------------------------------------------------------ */
 
-/**
- * Load map.svg, inject into the container, and wire up panzoom + click.
- * @param {string} containerId  – DOM id of the map wrapper
- * @param {function} onPinPlaced – callback({lat, lng}) when pin is placed
- */
 export async function initMap(containerId, onPinPlaced) {
     const container = document.getElementById(containerId);
     if (!container) throw new Error(`Container #${containerId} not found`);
 
     onPinPlacedCallback = onPinPlaced;
 
-    // Fetch and inject the SVG
-    const resp = await fetch('/map.svg');
-    const svgText = await resp.text();
-    container.innerHTML = svgText;
+    // Create wrapper for img + svg
+    containerWrapper = document.createElement('div');
+    containerWrapper.setAttribute('id', 'map-wrapper');
+    containerWrapper.style.position = 'relative';
+    containerWrapper.style.width = `${MAP_SIZE}px`;
+    containerWrapper.style.height = `${MAP_SIZE}px`;
+    container.appendChild(containerWrapper);
 
-    svgEl = container.querySelector('svg');
-    svgEl.setAttribute('id', 'world-map');
-    svgEl.style.width = '100%';
-    svgEl.style.height = '100%';
+    // Map Image
+    mapImg = document.createElement('img');
+    mapImg.src = '/map.png';
+    mapImg.setAttribute('id', 'map-raster');
+    mapImg.style.display = 'block';
+    mapImg.style.width = '100%';
+    mapImg.style.height = '100%';
+    containerWrapper.appendChild(mapImg);
 
-    // Wrap all existing content in a pannable group
-    mapGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    mapGroup.setAttribute('id', 'map-group');
-    while (svgEl.firstChild) mapGroup.appendChild(svgEl.firstChild);
-    svgEl.appendChild(mapGroup);
+    // SVG Overlay
+    svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgOverlay.setAttribute('id', 'map-overlay');
+    svgOverlay.setAttribute('viewBox', `0 0 ${MAP_SIZE} ${MAP_SIZE}`);
+    svgOverlay.style.position = 'absolute';
+    svgOverlay.style.top = '0';
+    svgOverlay.style.left = '0';
+    svgOverlay.style.width = '100%';
+    svgOverlay.style.height = '100%';
+    svgOverlay.style.pointerEvents = 'none';
+    containerWrapper.appendChild(svgOverlay);
 
-    // Create pin group (inside mapGroup so it pans/zooms with the map)
+    // Groups
+    highlightGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    highlightGroup.setAttribute('id', 'highlight-group');
+    svgOverlay.appendChild(highlightGroup);
+
     pinGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     pinGroup.setAttribute('id', 'pin-group');
     pinGroup.style.display = 'none';
-    mapGroup.appendChild(pinGroup);
+    svgOverlay.appendChild(pinGroup);
 
-    // Pin visuals: a circle + stem line
+    // Pin visuals
     const pinLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    pinLine.setAttribute('x1', 0);
-    pinLine.setAttribute('y1', 0);
-    pinLine.setAttribute('x2', 0);
-    pinLine.setAttribute('y2', -18);
+    pinLine.setAttribute('x1', 0); pinLine.setAttribute('y1', 0);
+    pinLine.setAttribute('x2', 0); pinLine.setAttribute('y2', -40); // Scaled for 4000px
     pinLine.setAttribute('class', 'pin-stem');
 
     const pinCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    pinCircle.setAttribute('cx', 0);
-    pinCircle.setAttribute('cy', -18);
-    pinCircle.setAttribute('r', 6);
+    pinCircle.setAttribute('cx', 0); pinCircle.setAttribute('cy', -40);
+    pinCircle.setAttribute('r', 12);
     pinCircle.setAttribute('class', 'pin-head');
 
     const pinDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    pinDot.setAttribute('cx', 0);
-    pinDot.setAttribute('cy', 0);
-    pinDot.setAttribute('r', 2.5);
+    pinDot.setAttribute('cx', 0); pinDot.setAttribute('cy', 0);
+    pinDot.setAttribute('r', 5);
     pinDot.setAttribute('class', 'pin-dot');
 
     pinGroup.appendChild(pinLine);
     pinGroup.appendChild(pinCircle);
     pinGroup.appendChild(pinDot);
 
-    // Panzoom — apply to the map group
-    panzoomInstance = panzoom(mapGroup, {
-        maxZoom: 20,
-        minZoom: 0.8,
+    // Panzoom
+    panzoomInstance = panzoom(containerWrapper, {
+        maxZoom: 10,
+        minZoom: 0.1,
         smoothScroll: false,
-        zoomDoubleClickSpeed: 1,   // disable double-click zoom
-        filterKey: () => true,     // allow all keys
+        zoomDoubleClickSpeed: 1,
+        filterKey: () => true,
     });
 
-    // Update pin scale on every transform
     panzoomInstance.on('transform', () => updatePinScale());
 
-    // Click detection (distinguish click from pan)
+    // Click detection
     let pointerDown = null;
-    svgEl.addEventListener('pointerdown', (e) => {
+    container.addEventListener('pointerdown', (e) => {
         pointerDown = { x: e.clientX, y: e.clientY };
     });
-    svgEl.addEventListener('pointerup', (e) => {
+    container.addEventListener('pointerup', (e) => {
         if (!pointerDown) return;
         const dx = Math.abs(e.clientX - pointerDown.x);
         const dy = Math.abs(e.clientY - pointerDown.y);
@@ -99,22 +104,22 @@ export async function initMap(containerId, onPinPlaced) {
         pointerDown = null;
     });
 
-    // Set sensible initial zoom to fill width
     requestAnimationFrame(() => fitMapToContainer(container));
 }
 
 /* ------------------------------------------------------------------ */
-/*  Coordinate helpers (screen → SVG map space)                       */
+/*  Coordinate helpers                                                */
 /* ------------------------------------------------------------------ */
 
 function screenToMapCoords(clientX, clientY) {
-    const pt = svgEl.createSVGPoint();
-    pt.x = clientX;
-    pt.y = clientY;
-    // getScreenCTM on mapGroup includes viewBox + panzoom transforms
-    const ctm = mapGroup.getScreenCTM().inverse();
-    const mapPt = pt.matrixTransform(ctm);
-    return { x: mapPt.x, y: mapPt.y };
+    const rect = containerWrapper.getBoundingClientRect();
+    const transform = panzoomInstance.getTransform();
+
+    // Reverse the panzoom transform to get coords relative to the 4000x4000 space
+    const x = (clientX - rect.left) / transform.scale;
+    const y = (clientY - rect.top) / transform.scale;
+
+    return { x, y };
 }
 
 /* ------------------------------------------------------------------ */
@@ -124,31 +129,18 @@ function screenToMapCoords(clientX, clientY) {
 function handleMapClick(e) {
     const { x, y } = screenToMapCoords(e.clientX, e.clientY);
 
-    // Bounds check
     if (x < 0 || x > MAP_SIZE || y < 0 || y > MAP_SIZE) return;
 
     const { lat, lng } = pixelToLatLng(x, y);
     currentPin = { lat, lng, svgX: x, svgY: y };
 
-    // Position the pin
     pinGroup.style.display = '';
-    pinGroup.setAttribute(
-        'transform',
-        `translate(${x}, ${y}) scale(${1 / getScale()})`,
-    );
+    updatePinPosition();
 
     if (onPinPlacedCallback) onPinPlacedCallback({ lat, lng });
 }
 
-/* ------------------------------------------------------------------ */
-/*  Pin scale (constant screen size)                                  */
-/* ------------------------------------------------------------------ */
-
-function getScale() {
-    return panzoomInstance ? panzoomInstance.getTransform().scale : 1;
-}
-
-function updatePinScale() {
+function updatePinPosition() {
     if (!currentPin) return;
     const s = 1 / getScale();
     pinGroup.setAttribute(
@@ -158,8 +150,38 @@ function updatePinScale() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Fit map to container on load                                      */
+/*  Highlighting                                                      */
 /* ------------------------------------------------------------------ */
+
+export function highlightCountry(iso) {
+    highlightGroup.innerHTML = '';
+    const polygons = countryBoundaries[iso];
+    if (!polygons) return;
+
+    polygons.forEach(ring => {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const d = ring.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join('') + 'Z';
+        path.setAttribute('d', d);
+        path.setAttribute('class', 'highlight-path');
+        highlightGroup.appendChild(path);
+    });
+}
+
+export function clearHighlights() {
+    highlightGroup.innerHTML = '';
+}
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function getScale() {
+    return panzoomInstance ? panzoomInstance.getTransform().scale : 1;
+}
+
+function updatePinScale() {
+    updatePinPosition();
+}
 
 function fitMapToContainer(container) {
     const cw = container.clientWidth;
@@ -170,13 +192,7 @@ function fitMapToContainer(container) {
     panzoomInstance.moveTo(0, yOffset);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Public helpers                                                     */
-/* ------------------------------------------------------------------ */
-
-export function getPin() {
-    return currentPin;
-}
+export function getPin() { return currentPin; }
 
 export function clearPin() {
     currentPin = null;
@@ -187,6 +203,8 @@ export function setPinColor(color) {
     if (!pinGroup) return;
     const head = pinGroup.querySelector('.pin-head');
     const dot = pinGroup.querySelector('.pin-dot');
+    const stem = pinGroup.querySelector('.pin-stem');
     if (head) head.setAttribute('fill', color);
     if (dot) dot.setAttribute('fill', color);
+    if (stem) stem.setAttribute('stroke', color);
 }

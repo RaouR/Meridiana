@@ -1,16 +1,10 @@
-/**
- * generate-map.mjs — Fetches world GeoJSON, simplifies it via TopoJSON,
- * merges geometries into a single SVG path, and exports hit-detection data.
- *
- * Usage:  node scripts/generate-map.mjs
- */
-
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { resolve, join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import * as topojsonServer from 'topojson-server';
 import * as topojsonSimplify from 'topojson-simplify';
 import * as topojsonClient from 'topojson-client';
+import { createCanvas } from 'canvas';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -18,8 +12,13 @@ const ROOT = resolve(__dirname, '..');
 const GEOJSON_URL =
     'https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson';
 
-const MAP_SIZE = 1000;
+const MAP_SIZE = 4000;
 const MAX_LAT = 85.0511;
+
+// Colors
+const COLOR_BG = '#0f0f1a';
+const COLOR_LAND = '#1a1a2e';
+const COLOR_BORDER = '#2a2a4a';
 
 /* ------------------------------------------------------------------ */
 /*  Mercator projection                                                */
@@ -33,20 +32,7 @@ function mercator(lng, lat) {
         MAP_SIZE / 2 -
         (MAP_SIZE / (2 * Math.PI)) *
         Math.log(Math.tan(Math.PI / 4 + latRad / 2));
-    return [Math.round(x * 10) / 10, Math.round(y * 10) / 10];
-}
-
-/* ------------------------------------------------------------------ */
-/*  Ring → SVG path data                                               */
-/* ------------------------------------------------------------------ */
-
-function ringToPathData(ring) {
-    return ring
-        .map((coord, i) => {
-            const [x, y] = mercator(coord[0], coord[1]);
-            return `${i === 0 ? 'M' : 'L'}${x},${y}`;
-        })
-        .join('') + 'Z';
+    return [x, y];
 }
 
 /* ------------------------------------------------------------------ */
@@ -77,14 +63,25 @@ async function main() {
     const simplifiedGeo = topojsonClient.feature(simpler, simpler.objects.countries);
     console.log(`   Geometry simplified.`);
 
-    let allPathData = '';
+    // Canvas Setup
+    const canvas = createCanvas(MAP_SIZE, MAP_SIZE);
+    const ctx = canvas.getContext('2d');
+
+    // Draw Background
+    ctx.fillStyle = COLOR_BG;
+    ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
+
     let countryBoundaries = {};
     let count = 0;
     let totalPoints = 0;
 
+    ctx.fillStyle = COLOR_LAND;
+    ctx.strokeStyle = COLOR_BORDER;
+    ctx.lineWidth = 1;
+    ctx.lineJoin = 'round';
+
     for (const feature of simplifiedGeo.features) {
         const props = feature.properties || {};
-        // Use properties found in this specific dataset
         const iso =
             props['ISO3166-1-Alpha-2'] ||
             props['ISO3166-1-Alpha-3'] ||
@@ -98,48 +95,49 @@ async function main() {
         const geom = feature.geometry;
         if (!geom) continue;
 
-        // Ensure we handle collisions or multiple polygons for the same ISO
         if (!countryBoundaries[iso]) countryBoundaries[iso] = [];
 
+        const processRing = (ring) => {
+            totalPoints += ring.length;
+            const points = ring.map(coord => mercator(coord[0], coord[1]));
+            countryBoundaries[iso].push(points);
+
+            if (points.length < 2) return;
+
+            ctx.beginPath();
+            ctx.moveTo(points[0][0], points[0][1]);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i][0], points[i][1]);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        };
+
         if (geom.type === 'Polygon') {
-            allPathData += geom.coordinates.map(ringToPathData).join('');
-            geom.coordinates.forEach(ring => {
-                totalPoints += ring.length;
-                countryBoundaries[iso].push(ring);
-            });
+            geom.coordinates.forEach(processRing);
         } else if (geom.type === 'MultiPolygon') {
             geom.coordinates.forEach((poly) => {
-                allPathData += poly.map(ringToPathData).join('');
-                poly.forEach(ring => {
-                    totalPoints += ring.length;
-                    countryBoundaries[iso].push(ring);
-                });
+                poly.forEach(processRing);
             });
         }
         count++;
     }
 
-    // 1. Write public/map.svg (Merged Path)
-    const svg = [
-        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${MAP_SIZE} ${MAP_SIZE}" preserveAspectRatio="xMidYMid meet">`,
-        `<rect width="${MAP_SIZE}" height="${MAP_SIZE}" fill="#0f0f1a"/>`,
-        `<g id="countries">`,
-        `  <path class="world-map" d="${allPathData}"/>`,
-        `</g>`,
-        `</svg>`,
-    ].join('\n');
-
     const outDir = join(ROOT, 'public');
     if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
-    writeFileSync(join(outDir, 'map.svg'), svg);
 
-    // 2. Write src/map-data.js (Hit Detection Data)
-    const dataContent = `/**\n * Auto-generated map data for hit detection.\n */\n\nexport const countryBoundaries = ${JSON.stringify(countryBoundaries)};\n`;
+    // 1. Write public/map.png
+    const buffer = canvas.toBuffer('image/png');
+    writeFileSync(join(outDir, 'map.png'), buffer);
+
+    // 2. Write src/map-data.js (Hit Detection Data) - using pre-projected coords for faster UI highlighting
+    const dataContent = `/**\n * Auto-generated map data for hit detection and highlighting.\n */\n\nexport const countryBoundaries = ${JSON.stringify(countryBoundaries)};\n`;
     writeFileSync(join(ROOT, 'src', 'map-data.js'), dataContent);
 
-    const sizeSVG = (Buffer.byteLength(svg) / 1024).toFixed(0);
+    const sizePNG = (buffer.length / 1024).toFixed(0);
     const sizeJS = (Buffer.byteLength(dataContent) / 1024).toFixed(0);
-    console.log(`✅  ${count} countries merged → public/map.svg (${sizeSVG} KB)`);
+    console.log(`✅  ${count} countries rendered → public/map.png (${sizePNG} KB)`);
     console.log(`✅  Hit data generated → src/map-data.js (${sizeJS} KB)`);
     console.log(`📊  Simplified points: ${totalPoints}`);
 }

@@ -5,7 +5,7 @@
 
 import { countryBoundaries } from './map-data.js';
 
-export const MAP_SIZE = 1000;
+export const MAP_SIZE = 4000;
 export const MAX_LAT = 85.0511;
 
 /* ------------------------------------------------------------------ */

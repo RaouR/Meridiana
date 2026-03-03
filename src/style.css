@@ -82,48 +82,42 @@ body {
   position: relative;
 }
 
-#map-container svg {
-  display: block;
+/* --- Map Raster/Hybrid Components --- */
+
+#map-wrapper {
+  background: var(--bg);
 }
 
-/* --- World Map (Merged Path) --- */
+#map-raster {
+  image-rendering: high-quality;
+  user-select: none;
+  -webkit-user-drag: none;
+}
 
-.world-map {
-  fill: var(--surface);
-  stroke: rgba(255, 255, 255, 0.1);
-  stroke-width: 0.3;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-  will-change: transform;
+#map-overlay {
   pointer-events: none;
-  /* Using JS for hit detection now */
-  shape-rendering: optimizeSpeed;
-  /* PERFORMANCE: Speed over anti-aliasing */
+  overflow: visible;
 }
 
-/* --- Country Paths (Legacy / Individual) --- */
-
-.country {
-  fill: var(--surface);
-  stroke: rgba(255, 255, 255, 0.1);
-  stroke-width: 0.3;
+.highlight-path {
+  fill: rgba(233, 69, 96, 0.4);
+  /* --accent with transparency */
+  stroke: var(--accent);
+  stroke-width: 1;
+  /* relative to 4000px */
   stroke-linejoin: round;
-  transition: fill 0.2s ease;
   vector-effect: non-scaling-stroke;
-  will-change: transform;
-  pointer-events: visiblePainted;
-}
-
-.country:hover {
-  fill: #252545;
 }
 
 /* --- Low Power Mode --- */
 
-.low-power .world-map,
-.low-power .country {
-  stroke-width: 0.5px;
-  filter: none !important;
+.low-power #map-raster {
+  image-rendering: auto;
+}
+
+.low-power .highlight-path {
+  fill: none;
+  stroke-width: 2px;
 }
 
 /* --- Pin --- */
@@ -132,6 +126,7 @@ body {
   fill: var(--accent);
   stroke: #fff;
   stroke-width: 1.5;
+  /* Note: these are now scaled by s = 1/scale in JS */
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
 }
 
