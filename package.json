@@ -1,0 +1,21 @@
+{
+  "name": "meridiana",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "generate-map": "node scripts/generate-map.mjs"
+  },
+  "devDependencies": {
+    "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "panzoom": "^9.4.3",
+    "topojson-client": "^3.1.0",
+    "topojson-server": "^3.0.1",
+    "topojson-simplify": "^3.0.3"
+  }
+}

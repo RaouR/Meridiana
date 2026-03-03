@@ -1,0 +1,183 @@
+/* ================================================================== */
+/*  Meridiana — Global Styles                                         */
+/* ================================================================== */
+
+/* --- Google Font (loaded in HTML) --- */
+
+:root {
+  --bg: #0f0f1a;
+  --surface: #1a1a2e;
+  --border: #2a2a4a;
+  --accent: #e94560;
+  --success: #0ead69;
+  --warning: #f4a261;
+  --gold: #ffd700;
+  --text: #eaeaea;
+  --text-muted: #888;
+  --font: 'Inter', system-ui, -apple-system, sans-serif;
+  --radius: 12px;
+}
+
+/* --- Reset --- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Header --- */
+
+#game-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+  position: relative;
+}
+
+#game-header h1 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, var(--accent), var(--warning));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* --- Game Area --- */
+
+#game-area {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 52px);
+  /* viewport minus header */
+  position: relative;
+}
+
+/* --- Map Container --- */
+
+#map-container {
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg);
+  cursor: crosshair;
+  position: relative;
+}
+
+#map-container svg {
+  display: block;
+}
+
+/* --- Country Paths --- */
+
+.country {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 0.3;
+  transition: fill 0.15s ease;
+  vector-effect: non-scaling-stroke;
+  will-change: transform;
+  pointer-events: visiblePainted;
+}
+
+.country:hover {
+  fill: #252545;
+}
+
+/* --- Pin --- */
+
+.pin-head {
+  fill: var(--accent);
+  stroke: #fff;
+  stroke-width: 1.5;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+.pin-stem {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.pin-dot {
+  fill: var(--accent);
+}
+
+/* --- Bottom Bar (coords display + submit) --- */
+
+#bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+#coordinates-display {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Submit Button --- */
+
+.btn-primary {
+  padding: 0.55rem 1.6rem;
+  font-family: var(--font);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s, opacity 0.2s;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #c73a52;
+  transform: translateY(-1px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-primary:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 600px) {
+  #game-header h1 {
+    font-size: 1rem;
+  }
+
+  #bottom-bar {
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem;
+  }
+}
